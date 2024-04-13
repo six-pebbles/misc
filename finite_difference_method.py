@@ -1,62 +1,50 @@
-import numpy as np
+# Given the model's symmetry, we can simplify the calculation
+# We know that T1 = T7, T2 = T6, T3 = T5, and T4 is the peak temperature
+# We can set up equations based on this symmetry and solve for T1 through T4
 
-# Constants
-k_CFRP = 7  # W/(m*K)
-k_adhesive = 0.2  # W/(m*K)
-q_adhesive = 4.5e5  # W/m^3
-delta_z = 0.001  # m
-T_processing_min = 121  # °C
-T_processing_max = 177  # °C
+def calculate_symmetrical_temperatures(delta_z, k_CFRP, k_adhesive, q_adhesive):
+    # Since we have symmetry, T2 = T6 and T3 = T5, we only need to solve for T1, T2, T3, T4
+    # Using a simple fixed-point iteration method
 
-# Number of temperatures we are solving for
-num_temps = 7
+    # Initial guesses
+    T1 = T2 = T3 = T4 = (processing_temp_min + processing_temp_max) / 2
+    
+    # Iterative method parameters
+    max_iterations = 10000
+    tolerance = 1e-5
+    for _ in range(max_iterations):
+        # Update equations based on current guess values
+        T2_new = T1  # Because T1 = T2 due to symmetry
+        T3_new = T2 + (q_adhesive * delta_z**2) / (2 * k_CFRP)  # Only half the heat generation term applies at T3
+        T4_new = T3 + (q_adhesive * delta_z**2) / k_adhesive
+        
+        # Check if the new temperatures are within the tolerance
+        if all(abs(T - T_new) < tolerance for T, T_new in zip([T2, T3, T4], [T2_new, T3_new, T4_new])):
+            break
+        # Update temperatures for the next iteration
+        T2, T3, T4 = T2_new, T3_new, T4_new
+    
+    # Check if the temperatures are within the processing range
+    if all(processing_temp_min <= T <= processing_temp_max for T in [T2, T3, T4]):
+        return T1, T2, T3, T4, True
+    else:
+        return T1, T2, T3, T4, False
 
-# Initialize temperatures, assuming a linear distribution as a first guess
-T = np.linspace(T_processing_min, T_processing_max, num_temps)
+# Search for T1 within the temperature range where T2, T3, and T4 are within the processing temperature range
+T1 = T_guess_min  # Start with the minimum processing temperature
+found = False
+while T1 <= T_guess_max and not found:
+    T1, T2, T3, T4, found = calculate_symmetrical_temperatures(delta_z, k_CFRP, k_adhesive, q_adhesive)
+    if not found:
+        T1 += 0.1  # Increment T1 by 0.1°C
 
-# Set up the equations as lambda functions
-equations = [
-    lambda T: (T[0] - 2*T[1] + T[2])/delta_z**2,
-    lambda T: k_CFRP*(T[1] - T[2])/delta_z + k_adhesive*(T[3] - T[2])/delta_z + q_adhesive*delta_z/2,
-    lambda T: (T[2] - 2*T[3] + T[4])/delta_z**2 + q_adhesive/k_adhesive,
-    lambda T: k_adhesive*(T[3] - T[4])/delta_z + k_CFRP*(T[5] - T[4])/delta_z + q_adhesive*delta_z/2,
-    lambda T: (T[4] - 2*T[5] + T[6])/delta_z**2
-]
-
-# Iteration settings
-max_iterations = 1000
-tolerance = 1e-5
-
-# Perform the iteration
-for iteration in range(max_iterations):
-    # Update T2 to T6 based on the equations
-    T[1] = 2*T[2] - T[3]  # From equation 1
-    T[2] = (k_CFRP*T[1] + k_adhesive*T[3] + q_adhesive*delta_z/2) * delta_z / (k_CFRP + k_adhesive) + T[3]  # From equation 2
-    T[4] = 2*T[3] - T[5] - q_adhesive*delta_z**2/k_adhesive  # From equation 4
-    T[5] = (k_adhesive*T[4] + k_CFRP*T[6] + q_adhesive*delta_z/2) * delta_z / (k_adhesive + k_CFRP) + T[4]  # From equation 5
-
-    # Check if T3, T4, T5 are within the processing temperature range
-    if all(T_processing_min <= T[i] <= T_processing_max for i in range(2, 5)):
-        break
-
-    # Check if T1 or T7 need to be adjusted
-    if T[2] < T_processing_min:
-        T[0] += (T_processing_min - T[2]) / 2
-        T[6] = T[0]  # Assuming T1 = T7
-    elif T[4] > T_processing_max:
-        T[0] -= (T[4] - T_processing_max) / 2
-        T[6] = T[0]  # Assuming T1 = T7
-
-    # Check for convergence
-    residuals = [equation(T) for equation in equations]
-    max_residual = max(abs(res) for res in residuals)
-    if max_residual < tolerance:
-        break
-
-if iteration == max_iterations - 1:
-    print("Max iterations reached without convergence.")
+# Construct the symmetrical temperature profile
+if found:
+    T5 = T3
+    T6 = T2
+    T7 = T1
+    result = (T1, T2, T3, T4, T5, T6, T7)
 else:
-    print(f"Converged after {iteration} iterations.")
+    result = "No solution found within the temperature guess range."
 
-# Output the temperatures
-T
+result
